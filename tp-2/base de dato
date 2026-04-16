@@ -1,0 +1,132 @@
+create table recurso{
+    nombre varchar(20) primary key,
+    peso decimal(10,2),
+    stock int,
+    categoria varchar(20),
+};
+
+create table envio{
+    nroEnvio int primary key,
+    fecha date,
+    estado varchar(50)
+};
+
+create table puestoAvanzada{
+    nombre varchar(20) primary key,
+    latitud decimal(10.2),
+    longitud decimal(10,2),
+    poblacion int
+};
+
+create table intercambio{
+    id int primary key,
+    fechahora datetime
+};
+
+create table etiquetasdeSeguridad{
+    nroEnvio int,
+    etiqueta varchar(50),
+    primary key (nroEnvio,etiqueta),
+    foreign key(nroEnvio) references envio(nroEnvio)
+};
+
+create table especialidades{
+    nombrePuesto varchar(50),
+    especialidad varchar(50),
+    primary key(nombrePuesto,especialidad),
+    foreign key(nombrePuesto) puestoAvanzada(nombre)
+};
+
+create table contieneEnvio{
+    nroEnvio int,
+    nombrerecurso varchar(50),
+    cantidad int,
+    primary key(nroEnvio,nombrerecurso),
+    foreign key(nroEnvio) references envio(nroEnvio),
+    foreign key(nombrerecurso)references recurso(nombre) 
+};
+
+create table almacena{
+    nombrerecurso varchar(50),
+    nombrePuesto varchar (50),
+    cantidad int,
+    primary key (nombrerecurso, nombrePuesto),
+    foreign key (nombrerecurso) references recurso(nombre),
+    foreign key (nombrePuesto) references puestoAvanzada(nombre)
+};
+
+create table recibe{
+    nroEnvio int,
+    nombrePuesto varchar(50),
+    primary key(nroEnvio),
+    foreign key (nroEnvio) references envio(nroEnvio),
+    foreign key(nombrePuesto) references puestoAvanzada(nombre)
+};
+
+create table contieneIntercambio{
+    idIntercambio int,
+    nombrerecurso varchar(50),
+    cantidad int,
+    primary key(idIntercambio,nombrerecurso),
+    foreign key(idIntercambio) references intercambio(id),
+    foreign key (nombrerecurso) references recurso(nombre)
+};
+
+create table saleDe{
+    idIntercambio int primary key,
+    nombrePuesto varchar(50),
+    foreign key(idIntercambio) references intercambio(id),
+    foreign key(nombrePuesto) references puestoAvanzada(nombre)
+};
+
+create table llegaA{
+    idIntercambio int primary key,
+    nombrePuesto varchar(50),
+    foreign key(idIntercambio) references intercambio(id),
+    foreign key(nombrePuesto) references puestoAvanzada(nombre)
+};
+
+SELECT nombre, stock FROM recurso WHERE categoria = 'Medicamentos' AND stock < 100;
+
+SELECT envio.nroEnvio, envio.estado, 
+SUM(recurso.peso * contieneEnvio.cantidad) AS peso_total,puestoAvanzada.latitud, puestoAvanzada.longitud FROM envio
+JOIN contieneEnvio ON envio.nroEnvio = contieneEnvio.nroEnvio
+JOIN recurso ON contieneEnvio.nombrerecurso = recurso.nombre
+JOIN recibe ON envio.nroEnvio = recibe.nroEnvio
+JOIN puestoAvanzada ON recibe.nombrePuesto = puestoAvanzada.nombre
+WHERE envio.estado = 'Pendiente'
+GROUP BY envio.nroEnvio, envio.estado, puestoAvanzada.latitud, puestoAvanzada.longitud;
+
+SELECT intercambio.fechahora,
+       contieneIntercambio.cantidad,
+       contieneIntercambio.nombrerecurso,
+       saleDe.nombrePuesto AS origen,
+       llegaA.nombrePuesto AS destino
+FROM intercambio
+JOIN contieneIntercambio ON intercambio.id = contieneIntercambio.idIntercambio
+JOIN saleDe ON intercambio.id = saleDe.idIntercambio
+JOIN llegaA ON intercambio.id = llegaA.idIntercambio;
+
+SELECT almacen.nombrePuesto FROM almacen GROUP BY almacen.nombrePuesto
+HAVING SUM(almacen.cantidad) > (
+    SELECT AVG(subconsulta.total)
+    FROM (
+        SELECT SUM(almacen.cantidad) AS total
+        FROM almacen
+        GROUP BY almacen.nombrePuesto
+    ) AS subconsulta
+);
+
+SELECT puestoAvanzada.nombre, puestoAvanzada.latitud, puestoAvanzada.longitud, puestoAvanzada.poblacion
+FROM puestoAvanzada
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM recibe
+    JOIN envio ON recibe.nroEnvio = envio.nroEnvio
+    JOIN contieneEnvio ON envio.nroEnvio = contieneEnvio.nroEnvio
+    JOIN recurso ON contieneEnvio.nombrerecurso = recurso.nombre
+    WHERE recibe.nombrePuesto = puestoAvanzada.nombre
+    AND recurso.categoria IN ('Medicamentos', 'Alimentos')
+    AND envio.fecha >= NOW() - INTERVAL 7 DAY
+)
+ORDER BY puestoAvanzada.poblacion DESC;
